@@ -25,8 +25,11 @@ final class BroadcastUploader: Sendable {
     private let channel: IPCChannel
     private let imageCodec = BroadcastImageCodec()
     
+    @Atomic private var isUploading = false
+    
     enum Error: Swift.Error {
         case unsupportedSample
+        case busy
     }
     
     /// Creates an uploader with an open connection to another process.
@@ -46,9 +49,13 @@ final class BroadcastUploader: Sendable {
     
     /// Upload a sample from ReplayKit.
     func upload(_ sampleBuffer: CMSampleBuffer, with type: RPSampleBufferType) async throws {
-        switch type {
-        case .video: try await sendImage(sampleBuffer)
-        default: throw Error.unsupportedSample
+        guard type == .video else { throw Error.unsupportedSample }
+        guard !isUploading else { throw Error.busy }
+        try await asyncDefer {
+            isUploading = true
+            try await sendImage(sampleBuffer)
+        } defer: {
+            isUploading = false
         }
     }
     
@@ -85,6 +92,20 @@ private extension VideoRotation {
         case .right: self = ._270
         default: self = ._0
         }
+    }
+}
+
+private func asyncDefer<T>(
+    _ task: () async throws -> T,
+    defer cleanUp: () -> Void
+) async rethrows -> T {
+    do {
+        let result = try await task()
+        cleanUp()
+        return result
+    } catch {
+        cleanUp()
+        throw error
     }
 }
 
