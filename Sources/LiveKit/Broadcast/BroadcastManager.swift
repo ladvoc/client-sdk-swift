@@ -69,12 +69,8 @@ public final class BroadcastManager: Sendable {
     /// - Note: This is merely a request and does not guarantee the user will choose to start the broadcast.
     ///
     public func requestActivation() {
-        Task {
-            await RPSystemBroadcastPickerView.show(
-                for: BroadcastBundleInfo.screenSharingExtension,
-                showsMicrophoneButton: false
-            )
-        }
+        guard let bundleIdentifier = BroadcastBundleInfo.screenSharingExtension else { return }
+        Task { await Self.showPicker(for: bundleIdentifier) }
     }
 
     /// Requests to stop the broadcast.
@@ -105,6 +101,16 @@ public final class BroadcastManager: Sendable {
             self?._state.delegate?.broadcastManager(didChangeState: $0)
         }
         .store(in: &cancellable)
+    }
+    
+    /// Convenience function to show broadcast extension picker.
+    @MainActor private static func showPicker(for preferredExtension: String) {
+        let view = RPSystemBroadcastPickerView()
+        view.preferredExtension = preferredExtension
+        
+        let selector = NSSelectorFromString("buttonPressed:")
+        guard view.responds(to: selector) else { return }
+        view.perform(selector, with: nil)
     }
 }
 
